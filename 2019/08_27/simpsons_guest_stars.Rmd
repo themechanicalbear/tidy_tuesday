@@ -1,0 +1,91 @@
+---
+title: "Simpsons Guest Stars"
+author: "Jason Taylor"
+date: "`r Sys.Date()`"
+output: 
+  html_document: 
+    fig_caption: yes
+    fig_height: 10
+    fig_width: 10
+    highlight: textmate
+  rmdformats::readthedown:
+    self_contained: true
+    thumbnails: false
+    lightbox: true
+    gallery: true
+    highlight: tango
+    fig_width: 10
+    fig_height: 8
+    includes:
+params:
+    update_data:
+        label: "Get data from github?"
+        value: No
+        input: select
+        choices: [No, Yes]
+---
+
+### TidyTuesday: https://github.com/rfordatascience/tidytuesday/tree/master/data/2019/2019-08-27
+
+```{r libraries, include = FALSE, message = FALSE, results = FALSE}
+library.list <- c("tidyverse", "here")
+lapply(library.list, require, character.only = TRUE)
+```
+
+### Get data from github
+
+```{r get_data}
+url <- "https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-08-27/simpsons-guests.csv"
+
+if (params$update_data == "Yes") {
+  simpsons <- readr::read_delim(url, delim = "|", quote = "")
+  saveRDS(simpsons, here("/2019/08_27/data/simpsons.RDS"))
+} else {
+  simpsons <- readRDS(here("/2019/08_27/data/simpsons.RDS"))
+}
+```
+
+### Munge data
+
+```{r data_munge}
+simpsons <- simpsons %>%
+  filter(!season == "Movie") %>%
+  mutate(number = strsplit(number, "; "),
+         production_code = strsplit(production_code, "; "),
+         role = strsplit(role, "; "),) %>%
+  unnest(cols = c(number, production_code, role)) %>%
+  separate(number, into = c("series_episode", "season_episode"), sep = "–") %>%
+  mutate(season_episode = str_trunc(season_episode, 2, side = "left", ellipsis = "")) %>%
+  mutate_at(., vars(season, series_episode, season_episode), as.numeric) %>%
+  mutate(played_self = case_when(role %in% c("Themselves", "Himself", "Herself") ~ 1,
+                                 TRUE ~ 0),
+         role = case_when(played_self == 1 ~ paste0(guest_star, "_", role),
+                          TRUE ~ role)) %>%
+  group_by(season) %>%
+  mutate(season_distinct_roles = n_distinct(role)) %>%
+  ungroup()
+```
+
+### Plot
+
+```{r plot}
+plot <- simpsons %>% 
+  ggplot(aes(x = season, y = season_distinct_roles)) + 
+  geom_point(size = 3, color = "white") +
+  geom_smooth(method = "lm", se = FALSE) +
+  theme_void() +
+  theme(axis.text = element_text(size = 15, color = "white"),
+        axis.title = element_text(size = 20, color = "white"),
+        plot.title = element_text(size = 25,face = "bold", color = "white",
+                                  hjust = 0.5),
+        plot.caption = element_text(color = "white"),
+        plot.margin = margin(t = 1, r = 5, b = 4, l = 1, "cm"),
+        axis.title.y = element_text(angle = 90)) + 
+  
+  ylab("Unique Guest Roles per Season") + 
+  xlab("Season") +
+  labs(title = "The number of guest roles in\nthe Simpsons is increasing", 
+       caption = "@mechanicalbear #TidyTuesday")
+
+ggimage::ggbackground(plot, here("/2019/08_27/data/chalkboard_simpsons.gif"))
+```
